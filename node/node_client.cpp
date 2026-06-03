@@ -410,6 +410,15 @@ namespace beam
                 throw std::runtime_error("Resolved peer list is empty");
             }
 
+            // Poll live peer stats every 2s on the node reactor and report them to the
+            // observer (accessible/known count + the currently-connected peer addresses).
+            io::Timer::Ptr peerStatsTimer = io::Timer::create(io::Reactor::get_Current());
+            peerStatsTimer->start(2000, true, [this, &node]() {
+                std::vector<std::string> connected;
+                node.get_ConnectedPeers(connected);
+                m_observer->onPeerStats(node.get_AcessiblePeerCount(), connected);
+            });
+
             m_isRunning = true;
             io::Reactor::get_Current().run();
             m_isRunning = false;

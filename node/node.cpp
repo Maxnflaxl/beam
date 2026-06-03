@@ -1156,6 +1156,16 @@ const PeerManager::AddrSet& Node::get_AcessiblePeerAddrs() const
 	return m_PeerMan.get_Addrs();
 }
 
+void Node::get_ConnectedPeers(std::vector<std::string>& out) const
+{
+	out.clear();
+	for (const Peer& peer : m_lstPeers)
+	{
+		if (peer.m_Flags & Peer::Flags::Connected)
+			out.push_back(peer.m_RemoteAddr.str());
+	}
+}
+
 void Node::InitKeys()
 {
 	if (m_Keys.m_pOwner)

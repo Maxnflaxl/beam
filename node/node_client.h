@@ -36,6 +36,10 @@ namespace beam
         virtual void onStoppedNode() = 0;
         virtual void onFailedToStartNode(io::ErrorCode errorCode) = 0;
         virtual void onSyncError(Node::IObserver::Error error) = 0;
+        // Live peer stats, polled while the node runs: accessible/known peer count (incl.
+        // temporarily banned) and the list of currently-connected peer addresses. Non-pure
+        // (optional) so existing observers need not implement it.
+        virtual void onPeerStats(uint32_t /*accessible*/, const std::vector<std::string>& /*connected*/) {}
 
         virtual uint16_t getLocalNodePort() const = 0;
         virtual std::string getLocalNodeStorage() const = 0;

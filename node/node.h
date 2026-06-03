@@ -222,6 +222,7 @@ struct Node
 
 	uint32_t get_AcessiblePeerCount() const; // all the peers with known addresses. Including temporarily banned
 	const PeerManager::AddrSet& get_AcessiblePeerAddrs() const;
+	void get_ConnectedPeers(std::vector<std::string>& out) const; // currently-connected peers (remote address)
 
 	bool m_UpdatedFromPeers = false;
 	bool m_PostStartSynced = false;
