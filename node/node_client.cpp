@@ -411,12 +411,16 @@ namespace beam
             }
 
             // Poll live peer stats every 2s on the node reactor and report them to the
-            // observer (accessible/known count + the currently-connected peer addresses).
+            // observer (accessible/known count + the currently-connected peer addresses +
+            // the full known/resolved peer address list).
             io::Timer::Ptr peerStatsTimer = io::Timer::create(io::Reactor::get_Current());
             peerStatsTimer->start(2000, true, [this, &node]() {
                 std::vector<std::string> connected;
                 node.get_ConnectedPeers(connected);
-                m_observer->onPeerStats(node.get_AcessiblePeerCount(), connected);
+                std::vector<std::string> known;
+                for (const auto& a : node.get_AcessiblePeerAddrs())
+                    known.push_back(a.m_Value.str());
+                m_observer->onPeerStats(node.get_AcessiblePeerCount(), connected, known);
             });
 
             m_isRunning = true;
