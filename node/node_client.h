@@ -25,6 +25,59 @@
 
 namespace beam
 {
+    struct NodePeerInfo
+    {
+        std::string m_Address;          // "ip:port", or whatever the caller annotates later
+        uint32_t m_RawRating = 0;       // PeerManager raw rating
+        uint32_t m_EffectiveBps = 0;    // PeerManager::Rating::ToBps(m_RawRating)
+        bool m_Banned = false;          // m_RatingKnown && m_RawRating == 0
+        bool m_RatingKnown = false;     // false => no PeerInfo (connected-but-unidentified)
+    };
+
+    // Snapshot of the node's BBS (SBBS relay) store, polled while the node runs.
+    // Plain std types only — consumers may be Beam-agnostic.
+    struct NodeBbsSnapshot
+    {
+        uint32_t m_Count = 0;           // messages currently held
+        uint64_t m_SizeBytes = 0;       // total payload bytes held
+        uint64_t m_MaxTimePosted = 0;   // newest message TimePosted (unix s), 0 if none
+        uint32_t m_TimeoutS = 0;        // retention window (m_Cfg.m_Bbs.m_MessageTimeout_s)
+        std::vector<std::pair<uint64_t, uint64_t>> m_Channels; // (channel, count)
+
+        struct Msg
+        {
+            uint64_t m_ID = 0;              // Bbs table rowid
+            std::string m_KeyHex;           // 256-bit message key, hex
+            uint64_t m_Channel = 0;
+            uint64_t m_TimePosted = 0;      // unix s
+            uint64_t m_Size = 0;            // payload bytes
+            uint32_t m_Nonce = 0;           // PoW nonce
+            std::string m_PayloadPreviewHex; // first bytes of the (encrypted) payload, hex
+            std::string m_RelayedBy;        // network peer that relayed it ("ip:port");
+                                            // empty for messages stored before this session
+        };
+        std::vector<Msg> m_Msgs;            // most recent messages, ascending by ID
+    };
+
+    // Snapshot of the node's deferred-tx queue (incoming txs parked for validation; the
+    // OOM-capped list). Plain std types only — consumers may be Beam-agnostic.
+    struct NodeTxQueueSnapshot
+    {
+        uint32_t m_Depth = 0;           // current queue length
+        uint32_t m_Cap = 0;             // m_MaxDeferredTransactions
+        uint64_t m_TotalDeferred = 0;   // lifetime enqueued
+        uint64_t m_TotalDropped = 0;    // lifetime evicted by the cap
+        struct Tx
+        {
+            uint64_t m_Seq = 0;         // monotonic enqueue counter (stable identity)
+            uint64_t m_Time = 0;        // unix s, enqueue time
+            std::string m_From;         // relaying network peer ("ip:port"); empty = local requeue
+            std::string m_SenderHex;    // wallet-level sender PeerID, hex; empty when unknown
+            bool m_Fluff = false;
+        };
+        std::vector<Tx> m_Recent;       // most recent enqueues, oldest first
+    };
+
     class INodeClientObserver
     {
     public:
@@ -40,8 +93,13 @@ namespace beam
         // temporarily banned), the list of currently-connected peer addresses, and the full
         // known/resolved peer address list. Non-pure (optional) so existing observers need
         // not implement it.
-        virtual void onPeerStats(uint32_t /*accessible*/, const std::vector<std::string>& /*connected*/,
-                                 const std::vector<std::string>& /*known*/) {}
+        virtual void onPeerStats(uint32_t /*accessible*/, const std::vector<NodePeerInfo>& /*connected*/,
+                                 const std::vector<NodePeerInfo>& /*known*/) {}
+        // BBS (SBBS relay) store stats, polled while the node runs alongside onPeerStats.
+        // Non-pure (optional) so existing observers need not implement it.
+        virtual void onBbsStats(const NodeBbsSnapshot& /*snapshot*/) {}
+        // Deferred-tx queue stats, polled on the same tick. Non-pure (optional).
+        virtual void onTxQueueStats(const NodeTxQueueSnapshot& /*snapshot*/) {}
 
         virtual uint16_t getLocalNodePort() const = 0;
         virtual std::string getLocalNodeStorage() const = 0;

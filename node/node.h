@@ -25,6 +25,8 @@
 #include <condition_variable>
 #include <pow/external_pow.h>
 #include <optional>
+#include <deque>
+#include <map>
 
 namespace beam
 {
@@ -73,8 +75,8 @@ struct Node
 		} m_Timeout;
 
 		uint32_t m_MaxConcurrentBlocksRequest = 18;
-		uint32_t m_MaxPoolTransactions = 100 * 1000;
-		uint32_t m_MaxDeferredTransactions = 100 * 1000;
+		uint32_t m_MaxPoolTransactions = 10 * 1000;
+		uint32_t m_MaxDeferredTransactions = 1000;
 		uint32_t m_MiningThreads = 0; // by default disabled
 
 		bool m_LogEvents = false; // may be insecure. Off by default.
@@ -222,7 +224,36 @@ struct Node
 
 	uint32_t get_AcessiblePeerCount() const; // all the peers with known addresses. Including temporarily banned
 	const PeerManager::AddrSet& get_AcessiblePeerAddrs() const;
-	void get_ConnectedPeers(std::vector<std::string>& out) const; // currently-connected peers (remote address)
+
+	struct ConnectedPeerInfo {
+		std::string m_Address;        // remote address "ip:port"
+		uint32_t m_RawRating = 0;     // PeerManager raw rating; meaningless when !m_RatingKnown
+		bool m_RatingKnown = false;   // false when the peer has no PeerInfo yet (pre-identification)
+	};
+	void get_ConnectedPeers(std::vector<ConnectedPeerInfo>& out) const; // currently-connected peers (remote address + rating)
+
+	// Operator telemetry: which network peer relayed a stored BBS message to us
+	// (in-memory only — empty for messages stored before this session).
+	std::string get_BbsRelayedBy(uint64_t id) const;
+
+	// Operator telemetry: the deferred-tx queue (incoming txs parked for validation).
+	struct DeferredTxInfo
+	{
+		uint64_t m_Seq = 0;     // monotonic enqueue counter — a stable per-entry identity
+		Timestamp m_Time = 0;
+		std::string m_From;     // relaying network peer ("ip:port"); empty for local requeues
+		PeerID m_Sender;        // wallet-level sender id (Zero when unknown)
+		bool m_Fluff = false;
+	};
+	struct DeferredTxStats
+	{
+		uint32_t m_Depth = 0;             // current queue length
+		uint32_t m_Cap = 0;               // m_Cfg.m_MaxDeferredTransactions
+		uint64_t m_TotalDeferred = 0;     // lifetime enqueued
+		uint64_t m_TotalDropped = 0;      // lifetime evicted by the cap
+		std::vector<DeferredTxInfo> m_Recent;   // most recent enqueues, oldest first
+	};
+	void get_DeferredTxStats(DeferredTxStats&) const;
 
 	bool m_UpdatedFromPeers = false;
 	bool m_PostStartSynced = false;
@@ -411,12 +442,18 @@ private:
 
 		std::list<Element> m_lst;
 
+		// Operator telemetry (see Node::get_DeferredTxStats)
+		uint64_t m_TotalDeferred = 0;
+		uint64_t m_TotalDropped = 0;
+		static const uint32_t s_RecentMax = 50;
+		std::deque<DeferredTxInfo> m_Recent;   // most recent enqueues, oldest first
+
 		void OnSchedule() override;
 
 		IMPLEMENT_GET_PARENT_OBJ(Node, m_TxDeferred)
 	} m_TxDeferred;
 
-	void OnTransactionDeferred(Transaction::Ptr&&, std::unique_ptr<Merkle::Hash>&&, const PeerID*, bool bFluff);
+	void OnTransactionDeferred(Transaction::Ptr&&, std::unique_ptr<Merkle::Hash>&&, const PeerID*, bool bFluff, Peer* pFrom);
 	uint8_t OnTransactionStem(Transaction::Ptr&&, std::ostream* pExtraInfo);
 	uint8_t OnTransactionFluff(Transaction::Ptr&&, std::ostream* pExtraInfo, const PeerID*, const TxPool::Stats*);
 	void OnTransactionFluff(TxPool::Fluff::Element&, const PeerID*);
@@ -477,6 +514,9 @@ private:
 		Timestamp m_HighestPosted_s = 0;
 
 		NodeDB::BbsTotals m_Totals;
+
+		// rowid -> relaying peer address (in-memory; pruned with Cleanup's deletes)
+		std::map<uint64_t, std::string> m_RelayedBy;
 
 		IMPLEMENT_GET_PARENT_OBJ(Node, m_Bbs)
 	} m_Bbs;

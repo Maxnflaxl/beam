@@ -16,6 +16,7 @@
 #include <mutex>
 #include "pow/external_pow.h"
 #include "utility/logger.h"
+#include "utility/hex.h"
 #include <boost/filesystem.hpp>
 
 namespace
@@ -412,15 +413,93 @@ namespace beam
 
             // Poll live peer stats every 2s on the node reactor and report them to the
             // observer (accessible/known count + the currently-connected peer addresses +
-            // the full known/resolved peer address list).
+            // the full known/resolved peer address list). The same tick snapshots the BBS
+            // (SBBS relay) store from the node DB.
             io::Timer::Ptr peerStatsTimer = io::Timer::create(io::Reactor::get_Current());
             peerStatsTimer->start(2000, true, [this, &node]() {
-                std::vector<std::string> connected;
-                node.get_ConnectedPeers(connected);
-                std::vector<std::string> known;
+                auto toInfo = [](const std::string& addr, uint32_t raw, bool ratingKnown) {
+                    NodePeerInfo e;
+                    e.m_Address = addr;
+                    e.m_RawRating = raw;
+                    e.m_EffectiveBps = PeerManager::Rating::ToBps(raw);
+                    e.m_Banned = ratingKnown && (raw == 0);
+                    e.m_RatingKnown = ratingKnown;
+                    return e;
+                };
+
+                std::vector<NodePeerInfo> connected;
+                std::vector<Node::ConnectedPeerInfo> rawConnected;
+                node.get_ConnectedPeers(rawConnected);
+                for (const auto& c : rawConnected)
+                    connected.push_back(toInfo(c.m_Address, c.m_RawRating, c.m_RatingKnown));
+
+                std::vector<NodePeerInfo> known;
                 for (const auto& a : node.get_AcessiblePeerAddrs())
-                    known.push_back(a.m_Value.str());
+                    known.push_back(toInfo(a.m_Value.str(), a.get_ParentObj().m_RawRating.m_Value, true));
+
                 m_observer->onPeerStats(node.get_AcessiblePeerCount(), connected, known);
+
+                NodeBbsSnapshot snap;
+                snap.m_TimeoutS = node.m_Cfg.m_Bbs.m_MessageTimeout_s;
+                NodeDB& db = node.get_Processor().get_DB();
+
+                NodeDB::BbsTotals totals = { 0, 0 };
+                db.get_BbsTotals(totals);
+                snap.m_Count = totals.m_Count;
+                snap.m_SizeBytes = totals.m_Size;
+                snap.m_MaxTimePosted = totals.m_Count ? db.get_BbsMaxTime() : 0;
+
+                struct Histogram : NodeDB::IBbsHistogram {
+                    std::vector<std::pair<uint64_t, uint64_t>>& m_Out;
+                    Histogram(std::vector<std::pair<uint64_t, uint64_t>>& out) : m_Out(out) {}
+                    bool OnChannel(BbsChannel ch, uint64_t nCount) override {
+                        m_Out.emplace_back(ch, nCount);
+                        return true;
+                    }
+                } hist(snap.m_Channels);
+                db.EnumBbs(hist);
+
+                // Most recent messages (by rowid; IDs autoincrement so the lower bound is
+                // an approximation when expired rows were deleted, which only widens it).
+                const uint64_t nMaxMsgs = 200;
+                const size_t nPreviewBytes = 256;
+                NodeDB::WalkerBbs wlk;
+                uint64_t nLastID = db.get_BbsLastID();
+                wlk.m_ID = (nLastID > nMaxMsgs) ? (nLastID - nMaxMsgs) : 0;
+                for (db.EnumAllBbsFull(wlk); wlk.MoveNext(); )
+                {
+                    NodeBbsSnapshot::Msg& m = snap.m_Msgs.emplace_back();
+                    m.m_ID = wlk.m_ID;
+                    m.m_KeyHex = to_hex(wlk.m_Data.m_Key.m_pData, wlk.m_Data.m_Key.nBytes);
+                    m.m_Channel = wlk.m_Data.m_Channel;
+                    m.m_TimePosted = wlk.m_Data.m_TimePosted;
+                    m.m_Size = wlk.m_Data.m_Message.n;
+                    m.m_Nonce = wlk.m_Data.m_Nonce;
+                    m.m_PayloadPreviewHex = to_hex(wlk.m_Data.m_Message.p,
+                        std::min<size_t>(wlk.m_Data.m_Message.n, nPreviewBytes));
+                    m.m_RelayedBy = node.get_BbsRelayedBy(wlk.m_ID);
+                }
+                m_observer->onBbsStats(snap);
+
+                Node::DeferredTxStats dts;
+                node.get_DeferredTxStats(dts);
+                NodeTxQueueSnapshot qs;
+                qs.m_Depth = dts.m_Depth;
+                qs.m_Cap = dts.m_Cap;
+                qs.m_TotalDeferred = dts.m_TotalDeferred;
+                qs.m_TotalDropped = dts.m_TotalDropped;
+                qs.m_Recent.reserve(dts.m_Recent.size());
+                for (const auto& d : dts.m_Recent)
+                {
+                    NodeTxQueueSnapshot::Tx& t = qs.m_Recent.emplace_back();
+                    t.m_Seq = d.m_Seq;
+                    t.m_Time = d.m_Time;
+                    t.m_From = d.m_From;
+                    if (!(d.m_Sender == Zero))
+                        t.m_SenderHex = to_hex(d.m_Sender.m_pData, d.m_Sender.nBytes);
+                    t.m_Fluff = d.m_Fluff;
+                }
+                m_observer->onTxQueueStats(qs);
             });
 
             m_isRunning = true;

@@ -853,7 +853,7 @@ void Node::Processor::OnRolledBack()
 		TxPool::Fluff::Element& x = (it++)->get_ParentObj();
 		if (!IsShieldedInPool(*x.m_pValue))
 		{
-			get_ParentObj().OnTransactionDeferred(std::move(x.m_pValue), nullptr, nullptr, true);
+			get_ParentObj().OnTransactionDeferred(std::move(x.m_pValue), nullptr, nullptr, true, nullptr);
 			get_ParentObj().m_TxPool.Delete(x);
 		}
 	}
@@ -1156,13 +1156,21 @@ const PeerManager::AddrSet& Node::get_AcessiblePeerAddrs() const
 	return m_PeerMan.get_Addrs();
 }
 
-void Node::get_ConnectedPeers(std::vector<std::string>& out) const
+void Node::get_ConnectedPeers(std::vector<ConnectedPeerInfo>& out) const
 {
 	out.clear();
 	for (const Peer& peer : m_lstPeers)
 	{
-		if (peer.m_Flags & Peer::Flags::Connected)
-			out.push_back(peer.m_RemoteAddr.str());
+		if (!(peer.m_Flags & Peer::Flags::Connected))
+			continue;
+
+		ConnectedPeerInfo& e = out.emplace_back();
+		e.m_Address = peer.m_RemoteAddr.str();
+		if (peer.m_pInfo)
+		{
+			e.m_RawRating = peer.m_pInfo->m_RawRating.m_Value;
+			e.m_RatingKnown = true;
+		}
 	}
 }
 
@@ -1480,11 +1488,27 @@ void Node::Bbs::Cleanup()
 			break;
 
 		db.BbsDel(wlk.m_ID);
+		m_RelayedBy.erase(wlk.m_ID);
 		m_Totals.m_Count--;
 		m_Totals.m_Size -= wlk.m_Size;
 	}
 
 	m_LastCleanup_ms = GetTime_ms();
+}
+
+std::string Node::get_BbsRelayedBy(uint64_t id) const
+{
+	auto it = m_Bbs.m_RelayedBy.find(id);
+	return (m_Bbs.m_RelayedBy.end() == it) ? std::string() : it->second;
+}
+
+void Node::get_DeferredTxStats(DeferredTxStats& out) const
+{
+	out.m_Depth = static_cast<uint32_t>(m_TxDeferred.m_lst.size());
+	out.m_Cap = m_Cfg.m_MaxDeferredTransactions;
+	out.m_TotalDeferred = m_TxDeferred.m_TotalDeferred;
+	out.m_TotalDropped = m_TxDeferred.m_TotalDropped;
+	out.m_Recent.assign(m_TxDeferred.m_Recent.begin(), m_TxDeferred.m_Recent.end());
 }
 
 void Node::Bbs::MaybeCleanup()
@@ -2548,11 +2572,11 @@ void Node::Peer::OnMsg(proto::NewTransaction&& msg)
 	}
 	else
 	{
-		m_This.OnTransactionDeferred(std::move(msg.m_Transaction), std::move(msg.m_Context), pSender, msg.m_Fluff);
+		m_This.OnTransactionDeferred(std::move(msg.m_Transaction), std::move(msg.m_Context), pSender, msg.m_Fluff, this);
 	}
 }
 
-void Node::OnTransactionDeferred(Transaction::Ptr&& pTx, std::unique_ptr<Merkle::Hash>&& pCtx, const PeerID* pSender, bool bFluff)
+void Node::OnTransactionDeferred(Transaction::Ptr&& pTx, std::unique_ptr<Merkle::Hash>&& pCtx, const PeerID* pSender, bool bFluff, Peer* pFrom)
 {
 	TxDeferred::Element txd;
 	txd.m_pTx = std::move(pTx);
@@ -2572,12 +2596,33 @@ void Node::OnTransactionDeferred(Transaction::Ptr&& pTx, std::unique_ptr<Merkle:
 	//    BEAM_LOG_INFO() << "Tx " << key << " deferred";
 	//}
 
+	// Operator telemetry: remember who handed us this tx (network peer + wallet sender).
+	{
+		DeferredTxInfo dti;
+		m_TxDeferred.m_TotalDeferred++;
+		dti.m_Seq = m_TxDeferred.m_TotalDeferred;
+		dti.m_Time = getTimestamp();
+		if (pFrom)
+			dti.m_From = pFrom->m_RemoteAddr.str();
+		dti.m_Sender = txd.m_Sender;
+		dti.m_Fluff = bFluff;
+		m_TxDeferred.m_Recent.push_back(std::move(dti));
+		while (m_TxDeferred.m_Recent.size() > TxDeferred::s_RecentMax)
+			m_TxDeferred.m_Recent.pop_front();
+	}
+
 	if (m_TxDeferred.m_lst.empty())
 		m_TxDeferred.start();
 	else
 	{
 		while (m_TxDeferred.m_lst.size() > m_Cfg.m_MaxDeferredTransactions)
+		{
+			if (pFrom) {
+				BEAM_LOG_DEBUG() << "Peer " << pFrom->m_RemoteAddr << " deferred txs exceeded";
+			}
+			m_TxDeferred.m_TotalDropped++;
 			m_TxDeferred.m_lst.pop_front();
+		}
 	}
 
 	m_TxDeferred.m_lst.push_back(std::move(txd));
@@ -4053,6 +4098,7 @@ void Node::Peer::OnMsg(proto::BbsMsg&& msg)
 	m_This.m_Bbs.MaybeCleanup();
 
 	uint64_t id = db.BbsIns(wlk.m_Data);
+	m_This.m_Bbs.m_RelayedBy[id] = m_RemoteAddr.str();   // operator telemetry
 	m_This.m_Bbs.m_W.Delete(wlk.m_Data.m_Key);
 
 	std::setmax(m_This.m_Bbs.m_HighestPosted_s, msg.m_TimePosted);
