@@ -229,6 +229,9 @@ struct Node
 		std::string m_Address;        // remote address "ip:port"
 		uint32_t m_RawRating = 0;     // PeerManager raw rating; meaningless when !m_RatingKnown
 		bool m_RatingKnown = false;   // false when the peer has no PeerInfo yet (pre-identification)
+		uint64_t m_TipHeight = 0;     // peer's reported chain tip (Peer::m_Tip height), 0 if unknown
+		bool m_Inbound = false;       // true if the peer dialed us (else we dialed them)
+		uint32_t m_LoginFlags = 0;    // negotiated proto::LoginFlags (capabilities)
 	};
 	void get_ConnectedPeers(std::vector<ConnectedPeerInfo>& out) const; // currently-connected peers (remote address + rating)
 

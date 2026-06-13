@@ -32,6 +32,9 @@ namespace beam
         uint32_t m_EffectiveBps = 0;    // PeerManager::Rating::ToBps(m_RawRating)
         bool m_Banned = false;          // m_RatingKnown && m_RawRating == 0
         bool m_RatingKnown = false;     // false => no PeerInfo (connected-but-unidentified)
+        uint64_t m_TipHeight = 0;       // peer's reported chain tip; 0 if unknown / not connected
+        bool m_Inbound = false;         // peer dialed us (inbound) vs we dialed them (outbound)
+        uint32_t m_LoginFlags = 0;      // negotiated proto login capabilities
     };
 
     // Snapshot of the node's BBS (SBBS relay) store, polled while the node runs.

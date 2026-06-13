@@ -430,8 +430,13 @@ namespace beam
                 std::vector<NodePeerInfo> connected;
                 std::vector<Node::ConnectedPeerInfo> rawConnected;
                 node.get_ConnectedPeers(rawConnected);
-                for (const auto& c : rawConnected)
-                    connected.push_back(toInfo(c.m_Address, c.m_RawRating, c.m_RatingKnown));
+                for (const auto& c : rawConnected) {
+                    NodePeerInfo e = toInfo(c.m_Address, c.m_RawRating, c.m_RatingKnown);
+                    e.m_TipHeight = c.m_TipHeight;
+                    e.m_Inbound = c.m_Inbound;
+                    e.m_LoginFlags = c.m_LoginFlags;
+                    connected.push_back(e);
+                }
 
                 std::vector<NodePeerInfo> known;
                 for (const auto& a : node.get_AcessiblePeerAddrs())

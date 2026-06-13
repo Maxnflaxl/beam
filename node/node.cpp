@@ -1166,6 +1166,9 @@ void Node::get_ConnectedPeers(std::vector<ConnectedPeerInfo>& out) const
 
 		ConnectedPeerInfo& e = out.emplace_back();
 		e.m_Address = peer.m_RemoteAddr.str();
+		e.m_TipHeight = peer.m_Tip.m_hh.m_Height;
+		e.m_Inbound = !!(peer.m_Flags & Peer::Flags::Accepted);
+		e.m_LoginFlags = peer.m_LoginFlags;
 		if (peer.m_pInfo)
 		{
 			e.m_RawRating = peer.m_pInfo->m_RawRating.m_Value;
