@@ -96,6 +96,20 @@ namespace beam
         std::vector<Event> m_Recent;    // capped (~64), newest last
     };
 
+    // Snapshot of the node's fluff-stage mempool (pending txs awaiting a block).
+    struct NodeMempoolSnapshot
+    {
+        uint32_t m_Count = 0;       // pending tx count
+        uint64_t m_TotalFees = 0;   // sum of pending tx fees (groth)
+        struct Tx
+        {
+            std::string m_KernelIdHex;  // first kernel id, hex
+            uint64_t m_Fee = 0;         // tx fee (groth)
+            uint64_t m_SizeBytes = 0;   // serialized tx size (best-effort; 0 if unavailable)
+        };
+        std::vector<Tx> m_Txs;          // capped (~200)
+    };
+
     class INodeClientObserver
     {
     public:
@@ -120,6 +134,8 @@ namespace beam
         virtual void onTxQueueStats(const NodeTxQueueSnapshot& /*snapshot*/) {}
         // Reorg/rollback events, polled on the same tick. Non-pure (optional).
         virtual void onReorgStats(const NodeReorgSnapshot& /*snapshot*/) {}
+        // Mempool (fluff-stage TxPool) snapshot, polled on the same tick. Non-pure (optional).
+        virtual void onMempoolStats(const NodeMempoolSnapshot& /*snapshot*/) {}
 
         virtual uint16_t getLocalNodePort() const = 0;
         virtual std::string getLocalNodeStorage() const = 0;

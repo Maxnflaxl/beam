@@ -543,6 +543,23 @@ namespace beam
                 rs.m_Deepest = obs.m_ReorgDeepest;
                 rs.m_Recent = obs.m_Reorgs;
                 m_observer->onReorgStats(rs);
+
+                NodeMempoolSnapshot ms;
+                for (const auto& profit : node.m_TxPool.m_setProfit) {
+                    const TxPool::Fluff::Element& e = profit.get_ParentObj();
+                    NodeMempoolSnapshot::Tx tx;
+                    tx.m_Fee = e.m_Profit.m_Stats.m_Fee;
+                    tx.m_SizeBytes = e.m_Profit.m_Stats.m_Size;
+                    if (e.m_pValue && !e.m_pValue->m_vKernels.empty()) {
+                        const Merkle::Hash& kid = e.m_pValue->m_vKernels.front()->get_ID();
+                        tx.m_KernelIdHex = to_hex(kid.m_pData, kid.nBytes);
+                    }
+                    ms.m_TotalFees += tx.m_Fee;
+                    ms.m_Count++;
+                    if (ms.m_Txs.size() < 200)
+                        ms.m_Txs.push_back(std::move(tx));
+                }
+                m_observer->onMempoolStats(ms);
             });
 
             m_isRunning = true;
