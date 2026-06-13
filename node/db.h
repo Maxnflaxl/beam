@@ -143,6 +143,7 @@ public:
 			PeerDel,
 			PeerEnum,
 			BbsEnumCSeq,
+			BbsEnumAllFull,
 			BbsHistogram,
 			BbsEnumAllSeq,
 			BbsEnumAll,
@@ -521,6 +522,7 @@ public:
 	};
 
 	void EnumBbsCSeq(WalkerBbs&); // set channel and ID before invocation
+	void EnumAllBbsFull(WalkerBbs&); // all channels, full fields, ordered by m_ID. Set m_ID lower bound before invocation
 	uint64_t BbsIns(const WalkerBbs::Data&); // must be unique (if not sure - first try to find it). Returns the ID
 	bool BbsFind(WalkerBbs&); // set Key
 	uint64_t BbsFind(const WalkerBbs::Key&);
