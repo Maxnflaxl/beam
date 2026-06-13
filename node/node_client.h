@@ -81,6 +81,21 @@ namespace beam
         std::vector<Tx> m_Recent;       // most recent enqueues, oldest first
     };
 
+    // Reorg/rollback events observed this session (in-memory ring buffer, newest last).
+    struct NodeReorgSnapshot
+    {
+        uint32_t m_Count = 0;       // total reorgs observed this session
+        uint32_t m_Deepest = 0;     // deepest rollback depth this session
+        struct Event
+        {
+            uint64_t m_Time = 0;        // unix s
+            uint64_t m_FromHeight = 0;  // tip height before the rollback
+            uint64_t m_ToHeight = 0;    // tip height after the rollback
+            uint32_t m_Depth = 0;       // m_FromHeight - m_ToHeight
+        };
+        std::vector<Event> m_Recent;    // capped (~64), newest last
+    };
+
     class INodeClientObserver
     {
     public:
@@ -103,6 +118,8 @@ namespace beam
         virtual void onBbsStats(const NodeBbsSnapshot& /*snapshot*/) {}
         // Deferred-tx queue stats, polled on the same tick. Non-pure (optional).
         virtual void onTxQueueStats(const NodeTxQueueSnapshot& /*snapshot*/) {}
+        // Reorg/rollback events, polled on the same tick. Non-pure (optional).
+        virtual void onReorgStats(const NodeReorgSnapshot& /*snapshot*/) {}
 
         virtual uint16_t getLocalNodePort() const = 0;
         virtual std::string getLocalNodeStorage() const = 0;

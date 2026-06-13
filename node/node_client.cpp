@@ -14,6 +14,7 @@
 
 #include "node_client.h"
 #include <mutex>
+#include <ctime>
 #include "pow/external_pow.h"
 #include "utility/logger.h"
 #include "utility/hex.h"
@@ -342,6 +343,29 @@ namespace beam
                     m_model.m_observer->onSyncError(error);
                 }
 
+                void OnStateChanged() override
+                {
+                    m_LastTip = m_node.get_Processor().m_Cursor.m_hh.m_Height;
+                }
+
+                void OnRolledBack() override
+                {
+                    uint64_t to = m_node.get_Processor().m_Cursor.m_hh.m_Height;
+                    if (m_LastTip > to)
+                    {
+                        NodeReorgSnapshot::Event e;
+                        e.m_Time = (uint64_t) time(nullptr);
+                        e.m_FromHeight = m_LastTip;
+                        e.m_ToHeight = to;
+                        e.m_Depth = (uint32_t)(m_LastTip - to);
+                        m_Reorgs.push_back(e);
+                        if (m_Reorgs.size() > 64) m_Reorgs.erase(m_Reorgs.begin());
+                        ++m_ReorgCount;
+                        if (e.m_Depth > m_ReorgDeepest) m_ReorgDeepest = e.m_Depth;
+                    }
+                    m_LastTip = to;
+                }
+
                 void InitializeUtxosProgress(uint64_t done, uint64_t total) override
                 {
                     m_model.m_observer->onInitProgressUpdated(done, total);
@@ -381,6 +405,14 @@ namespace beam
                     }
                     return true;
                 }
+
+                // Reorg state observed via OnStateChanged/OnRolledBack; read by the
+                // peer-stats timer. Public so the timer lambda can snapshot them.
+                uint64_t m_LastTip = 0;
+                uint32_t m_ReorgCount = 0;
+                uint32_t m_ReorgDeepest = 0;
+                std::vector<NodeReorgSnapshot::Event> m_Reorgs;  // newest last, capped
+
             private:
                 void AdjustProgress(uint64_t& done, uint64_t& total)
                 {
@@ -416,7 +448,7 @@ namespace beam
             // the full known/resolved peer address list). The same tick snapshots the BBS
             // (SBBS relay) store from the node DB.
             io::Timer::Ptr peerStatsTimer = io::Timer::create(io::Reactor::get_Current());
-            peerStatsTimer->start(2000, true, [this, &node]() {
+            peerStatsTimer->start(2000, true, [this, &node, &obs]() {
                 auto toInfo = [](const std::string& addr, uint32_t raw, bool ratingKnown) {
                     NodePeerInfo e;
                     e.m_Address = addr;
@@ -505,6 +537,12 @@ namespace beam
                     t.m_Fluff = d.m_Fluff;
                 }
                 m_observer->onTxQueueStats(qs);
+
+                NodeReorgSnapshot rs;
+                rs.m_Count = obs.m_ReorgCount;
+                rs.m_Deepest = obs.m_ReorgDeepest;
+                rs.m_Recent = obs.m_Reorgs;
+                m_observer->onReorgStats(rs);
             });
 
             m_isRunning = true;
