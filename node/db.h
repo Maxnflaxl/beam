@@ -159,6 +159,7 @@ public:
 			DummyFind,
 			DummyUpdHeight,
 			DummyDel,
+			DummyEnum,
 			KernelIns,
 			KernelFind,
 			KernelDel,
@@ -570,6 +571,11 @@ public:
 	bool EnumBbs(IBbsHistogram&);
 
 
+	struct DummyRow {
+		Key::ID m_Kid;
+		Height  m_SpendHeight;
+	};
+	void EnumDummies(std::vector<DummyRow>&);
 	void InsertDummy(Height h, const Key::ID&);
 	Height GetLowestDummy(Key::ID&);
 	void DeleteDummy(const Key::ID& kid);

@@ -2313,6 +2313,18 @@ Height NodeDB::GetLowestDummy(Key::ID& kid)
 	return h;
 }
 
+void NodeDB::EnumDummies(std::vector<DummyRow>& out)
+{
+	// Unbounded SELECT is acceptable: the table is bounded in practice by OutputsMax × dummy-lifetime window.
+	Recordset rs(*this, Query::DummyEnum, "SELECT " TblDummy_ID "," TblDummy_SpendHeight " FROM " TblDummy " ORDER BY " TblDummy_SpendHeight " ASC");
+	while (rs.Step())
+	{
+		DummyRow& r = out.emplace_back();
+		rs.get(0, r.m_Kid);
+		rs.get(1, r.m_SpendHeight);
+	}
+}
+
 Height NodeDB::GetDummyHeight(const Key::ID& kid)
 {
 	Recordset rs(*this, Query::DummyFind, "SELECT " TblDummy_SpendHeight " FROM " TblDummy " WHERE " TblDummy_ID "=?");

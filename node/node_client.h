@@ -110,6 +110,33 @@ namespace beam
         std::vector<Tx> m_Txs;          // capped (~200)
     };
 
+    // Snapshot of the node's decoy (dummy UTXO) schedule + recent create/spend events.
+    // Plain std types only — consumers may be Beam-agnostic.
+    struct NodeDummySnapshot
+    {
+        uint32_t m_PendingCount = 0;     // current pending decoy count
+        uint64_t m_NextSpendHeight = 0;  // soonest scheduled spend; 0 = none
+        uint32_t m_LifetimeLo = 0;       // dummy lifetime window, blocks
+        uint32_t m_LifetimeHi = 0;
+        struct Entry
+        {
+            uint64_t m_Idx = 0;
+            uint32_t m_SubKey = 0;
+            uint64_t m_SpendHeight = 0;
+        };
+        std::vector<Entry> m_PendingList;  // ascending by spend height
+        struct Event
+        {
+            uint64_t m_Time = 0;        // unix s
+            uint64_t m_Height = 0;      // tip height at the event
+            bool     m_Spent = false;   // false = created, true = spent
+            uint64_t m_Idx = 0;
+            uint32_t m_SubKey = 0;
+            uint64_t m_SpendHeight = 0;
+        };
+        std::vector<Event> m_Recent;       // oldest first, capped (~64)
+    };
+
     class INodeClientObserver
     {
     public:
@@ -136,6 +163,8 @@ namespace beam
         virtual void onReorgStats(const NodeReorgSnapshot& /*snapshot*/) {}
         // Mempool (fluff-stage TxPool) snapshot, polled on the same tick. Non-pure (optional).
         virtual void onMempoolStats(const NodeMempoolSnapshot& /*snapshot*/) {}
+        // Decoy (dummy UTXO) stats, polled on the same tick. Non-pure (optional).
+        virtual void onDummyStats(const NodeDummySnapshot& /*snapshot*/) {}
 
         virtual uint16_t getLocalNodePort() const = 0;
         virtual std::string getLocalNodeStorage() const = 0;

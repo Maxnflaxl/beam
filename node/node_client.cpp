@@ -560,6 +560,34 @@ namespace beam
                         ms.m_Txs.push_back(std::move(tx));
                 }
                 m_observer->onMempoolStats(ms);
+
+                Node::DummyStats dst;
+                node.get_DummyStats(dst);
+                NodeDummySnapshot dsnap;
+                dsnap.m_PendingCount = dst.m_Pending;
+                dsnap.m_NextSpendHeight = (MaxHeight == dst.m_NextSpend) ? 0 : dst.m_NextSpend;
+                dsnap.m_LifetimeLo = dst.m_LifetimeLo;
+                dsnap.m_LifetimeHi = dst.m_LifetimeHi;
+                dsnap.m_PendingList.reserve(dst.m_PendingList.size());
+                for (const auto& d : dst.m_PendingList)
+                {
+                    NodeDummySnapshot::Entry& e = dsnap.m_PendingList.emplace_back();
+                    e.m_Idx = d.m_Idx;
+                    e.m_SubKey = d.m_SubKey;
+                    e.m_SpendHeight = d.m_SpendHeight;
+                }
+                dsnap.m_Recent.reserve(dst.m_Recent.size());
+                for (const auto& v : dst.m_Recent)
+                {
+                    NodeDummySnapshot::Event& e = dsnap.m_Recent.emplace_back();
+                    e.m_Time = v.m_Time;
+                    e.m_Height = v.m_Height;
+                    e.m_Spent = v.m_Spent;
+                    e.m_Idx = v.m_Idx;
+                    e.m_SubKey = v.m_SubKey;
+                    e.m_SpendHeight = (MaxHeight == v.m_SpendHeight) ? 0 : v.m_SpendHeight;
+                }
+                m_observer->onDummyStats(dsnap);
             });
 
             m_isRunning = true;

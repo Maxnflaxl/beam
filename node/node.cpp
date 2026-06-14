@@ -1514,6 +1514,47 @@ void Node::get_DeferredTxStats(DeferredTxStats& out) const
 	out.m_Recent.assign(m_TxDeferred.m_Recent.begin(), m_TxDeferred.m_Recent.end());
 }
 
+void Node::get_DummyStats(DummyStats& out)
+{
+	out.m_LifetimeLo = m_Cfg.m_Dandelion.m_DummyLifetimeLo;
+	out.m_LifetimeHi = m_Cfg.m_Dandelion.m_DummyLifetimeHi;
+
+	std::vector<NodeDB::DummyRow> rows;
+	m_Processor.get_DB().EnumDummies(rows);
+
+	out.m_Pending = static_cast<uint32_t>(rows.size());
+	if (!rows.empty())
+		out.m_NextSpend = rows.front().m_SpendHeight; // table is ordered ASC
+
+	out.m_PendingList.reserve(rows.size());
+	for (const auto& r : rows)
+	{
+		DummyInfo di;
+		CoinID cid;
+		static_cast<Key::ID&>(cid) = r.m_Kid;   // strip scheme bits via get_Subkey(), matching the events path
+		di.m_Idx = r.m_Kid.m_Idx;
+		di.m_SubKey = cid.get_Subkey();
+		di.m_SpendHeight = r.m_SpendHeight;
+		out.m_PendingList.push_back(di);
+	}
+
+	out.m_Recent.assign(m_DummyEvents.begin(), m_DummyEvents.end());
+}
+
+void Node::PushDummyEvent(bool bSpent, const CoinID& cid, Height hSpend)
+{
+	DummyEvent e;
+	e.m_Time = getTimestamp();
+	e.m_Height = m_Processor.m_Cursor.m_hh.m_Height;
+	e.m_Spent = bSpent;
+	e.m_Idx = cid.m_Idx;
+	e.m_SubKey = cid.get_Subkey();
+	e.m_SpendHeight = hSpend;
+	m_DummyEvents.push_back(std::move(e));
+	while (m_DummyEvents.size() > s_DummyEventsMax)
+		m_DummyEvents.pop_front();
+}
+
 void Node::Bbs::MaybeCleanup()
 {
 	if (IsInLimits())
@@ -3081,6 +3122,7 @@ void Node::AddDummyInputs(Transaction& tx, TxPool::Stats& stats)
 		{
 			/// in the (unlikely) case the tx will be lost - we'll retry spending this UTXO after the following num of blocks
 			m_Processor.get_DB().SetDummyHeight(cid, m_Processor.m_Cursor.m_hh.m_Height + m_Cfg.m_Dandelion.m_DummyLifetimeLo + 1);
+			PushDummyEvent(true, cid, MaxHeight);   // decoy spent (added as a tx input)
 		}
 		else
 		{
@@ -3186,6 +3228,7 @@ void Node::AddDummyOutputs(Transaction& tx, TxPool::Stats& stats)
 
 		Height h = SampleDummySpentHeight();
 		db.InsertDummy(h, cid);
+		PushDummyEvent(false, cid, h);   // decoy created, scheduled to spend at h
 
 		tx.m_vOutputs.push_back(std::move(pOutput));
 

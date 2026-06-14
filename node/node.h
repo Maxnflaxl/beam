@@ -258,6 +258,33 @@ struct Node
 	};
 	void get_DeferredTxStats(DeferredTxStats&) const;
 
+	// Operator telemetry: decoy (dummy UTXO) schedule + recent create/spend events.
+	struct DummyInfo
+	{
+		uint64_t m_Idx = 0;         // Key::ID index — stable per-decoy identity
+		uint32_t m_SubKey = 0;
+		Height   m_SpendHeight = 0; // scheduled spend height (from the Dummies table)
+	};
+	struct DummyEvent
+	{
+		Timestamp m_Time = 0;       // unix s
+		Height    m_Height = 0;     // tip height when the event fired
+		bool      m_Spent = false;  // false = created, true = spent (added as a tx input)
+		uint64_t  m_Idx = 0;
+		uint32_t  m_SubKey = 0;
+		Height    m_SpendHeight = 0; // scheduled spend height (meaningful for create events)
+	};
+	struct DummyStats
+	{
+		uint32_t m_Pending = 0;       // current pending decoy count
+		Height   m_NextSpend = MaxHeight; // soonest scheduled spend; MaxHeight if none
+		uint32_t m_LifetimeLo = 0;    // m_Cfg.m_Dandelion.m_DummyLifetimeLo
+		uint32_t m_LifetimeHi = 0;    // m_Cfg.m_Dandelion.m_DummyLifetimeHi
+		std::vector<DummyInfo> m_PendingList;   // pending decoys, ascending by spend height
+		std::vector<DummyEvent> m_Recent;       // create/spend events, oldest first
+	};
+	void get_DummyStats(DummyStats&);   // non-const: reads the Dummies table
+
 	bool m_UpdatedFromPeers = false;
 	bool m_PostStartSynced = false;
 
@@ -455,6 +482,11 @@ private:
 
 		IMPLEMENT_GET_PARENT_OBJ(Node, m_TxDeferred)
 	} m_TxDeferred;
+
+	// Decoy create/spend telemetry (in-memory, newest last; see get_DummyStats).
+	static const uint32_t s_DummyEventsMax = 64;
+	std::deque<DummyEvent> m_DummyEvents;
+	void PushDummyEvent(bool bSpent, const CoinID&, Height hSpend);
 
 	void OnTransactionDeferred(Transaction::Ptr&&, std::unique_ptr<Merkle::Hash>&&, const PeerID*, bool bFluff, Peer* pFrom);
 	uint8_t OnTransactionStem(Transaction::Ptr&&, std::ostream* pExtraInfo);
