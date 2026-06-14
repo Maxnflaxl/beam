@@ -303,6 +303,15 @@ namespace beam::wallet::imp
         });
     }
 
+    void IPFSService::AnyThread_peers(uint32_t timeout, std::function<void (std::string&&)>&& res, Err&& err)
+    {
+        call_ipfs(timeout, std::move(res), std::move(err), [this]
+        (boost::asio::yield_context yield, std::function<void()>& cancel) -> auto
+        {
+            return _node->swarm_peers(cancel, std::move(yield));
+        });
+    }
+
     void IPFSService::AnyThread_pin(const std::string& hash, uint32_t timeout, std::function<void ()>&& res, Err&& err)
     {
         if (hash.empty())

@@ -72,6 +72,11 @@ namespace beam::wallet
                          std::function<void (std::vector<uint8_t>&&)>&& res,
                          Err&&) = 0;
 
+        /// \brief Get swarm peers from IPFS node as a JSON string
+        virtual void AnyThread_peers(uint32_t timeout,
+                         std::function<void (std::string&&)>&& res,
+                         Err&&) = 0;
+
         /// \brief Pin to the local node
         virtual void AnyThread_pin(const std::string& hash, uint32_t timeout,
                          std::function<void ()>&& res,
