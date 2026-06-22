@@ -4480,9 +4480,7 @@ void TestAll()
 	ECC::PseudoRandomGenerator prg;
 	ECC::PseudoRandomGenerator::Scope scopePrg(&prg);
 
-	bool bClientProtoOnly = false;
-	bool bTestPbft = true;
-	bool bTestBridge = false;
+	bool bClientProtoOnly = true;
 
 	//auto logger = beam::Logger::create(BEAM_LOG_LEVEL_DEBUG, BEAM_LOG_LEVEL_DEBUG);
 	if (!bClientProtoOnly)
@@ -4571,7 +4569,10 @@ void TestAll()
 	printf("Node <---> Client test (with proofs)...\n");
 	fflush(stdout);
 
-	beam::TestNodeClientProto(r, bTestPbft, bTestBridge);
+	beam::TestNodeClientProto(r, false, false);
+	beam::DeleteFile(beam::g_sz);
+	beam::DeleteFile(beam::g_sz2);
+	beam::TestNodeClientProto(r, true, true);
 
 	{
 		auto logger = beam::Logger::create(BEAM_LOG_LEVEL_DEBUG, BEAM_LOG_LEVEL_DEBUG);
