@@ -7327,49 +7327,25 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 	SerializerSizeCounter ssc;
 	ssc & bc.m_Block;
 
-	Block::Builder bb(bc.m_SubIdx, bc.m_Coin, bc.m_Tag, m_Height);
-
-	Output::Ptr pOutp;
-	TxKernel::Ptr pKrn;
-
 	const auto& r = Rules::get();
-	if (Rules::Consensus::Pbft != r.m_Consensus)
-	{
-		bb.AddCoinbaseAndKrn(pOutp, pKrn);
-		if (pOutp)
-			ssc & *pOutp;
-		yas::detail::SaveKrn(ssc, *pKrn, false); // pessimistic
-	}
+	auto& rbs = m_Proc.m_ReserveBlockSize; // alias
 
-	ECC::Scalar::Native offset = bc.m_Block.m_Offset;
-
-	if (BlockContext::Mode::Assemble != bc.m_Mode)
-	{
-		if (pOutp)
-		{
-			if (!HandleBlockElement(*pOutp))
-				return 0;
-
-			bc.m_Block.m_vOutputs.push_back(std::move(pOutp));
-		}
-
-		if (pKrn)
-		{
-			if (!HandleBlockElement(*pKrn))
-				return 0;
-
-			bc.m_Block.m_vKernels.push_back(std::move(pKrn));
-		}
-	}
-
-	if (!m_Proc.m_nReserveBlockSizeForFees && (Rules::Consensus::Pbft != r.m_Consensus))
+	if (!rbs.m_Size)
 	{
 		SerializerSizeCounter ssc2;
 
 		if (Rules::Consensus::Pbft != r.m_Consensus)
 		{
-			// size of extra UTXO
+			// coinbase UTXO
 			Output outp;
+			outp.m_pPublic.reset(new ECC::RangeProof::Public);
+			ZeroObject(*outp.m_pPublic);
+			outp.m_pPublic->m_Value = static_cast<Amount>(-1); // pessimistic
+
+			ssc2 & outp;
+
+			// fees UTXO
+			outp.m_pPublic.reset();
 			outp.m_pConfidential.reset(new ECC::RangeProof::Confidential);
 			ZeroObject(*outp.m_pConfidential);
 			outp.m_pAsset = std::make_unique<Asset::Proof>();
@@ -7377,6 +7353,10 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 			outp.m_pAsset->m_Begin = static_cast<Asset::ID>(-1);
 
 			ssc2 & outp;
+
+			TxKernelStd krn = {};
+			krn.m_Height.m_Min = MaxHeight; // pessimistic
+			ssc2 & krn;
 		}
 		else
 		{
@@ -7391,22 +7371,23 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 			ssc2 & krn;
 		}
 
-		m_Proc.m_nReserveBlockSizeForFees = ssc2.m_Counter.m_Value;
+		rbs.m_Size = ssc2.m_Counter.m_Value;
 	}
 
-	if (bc.m_Fees)
-		ssc.m_Counter.m_Value += m_Proc.m_nReserveBlockSizeForFees;
+	ssc.m_Counter.m_Value += rbs.m_Size; // pre-add it
 
 	const size_t nSizeMax = r.MaxBodySize;
 	if (ssc.m_Counter.m_Value > nSizeMax)
 	{
-		// the block may be non-empty (i.e. contain treasury)
+		// the block may be non-empty (i.e. pre-selected txs)
 		BEAM_LOG_WARNING() << "Block too large.";
 		return 0; //
 	}
 
+	Amount feesReserve = static_cast<Amount>(-1);
+	Block::Builder bb(bc.m_SubIdx, bc.m_Coin, bc.m_Tag, m_Height);
+	ECC::Scalar::Native offset = bc.m_Block.m_Offset;
 	size_t nTxNum = 0;
-
 	DependentContextSwitch::Vec vDependent;
 	DependentContextSwitch::Convert(vDependent, bc.m_pParent);
 
@@ -7424,15 +7405,10 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 			nSize -= x.m_pParent->m_Size;
 		}
 
-		Amount feesNext = bc.m_Fees + txFee;
-		if (feesNext < bc.m_Fees)
+		if (txFee > feesReserve)
 			break; // huge fees are unsupported
 
-
 		size_t nSizeNext = ssc.m_Counter.m_Value + nSize;
-		if (!bc.m_Fees && feesNext)
-			nSizeNext += m_Proc.m_nReserveBlockSizeForFees;
-
 		if (nSizeNext > nSizeMax)
 			break;
 
@@ -7447,7 +7423,8 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 
 		TxVectors::Writer(bc.m_Block, bc.m_Block).Dump(tx.get_Reader());
 
-		bc.m_Fees = feesNext;
+		feesReserve -= txFee;
+		bc.m_Fees += txFee;
 		ssc.m_Counter.m_Value = nSizeNext;
 		offset += ECC::Scalar::Native(tx.m_Offset);
 		++nTxNum;
@@ -7457,14 +7434,10 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 	{
 		TxPool::Fluff::Element& x = (it++)->get_ParentObj();
 
-		Amount feesNext = bc.m_Fees + x.m_Profit.m_Stats.m_Fee;
-		if (feesNext < bc.m_Fees)
+		if (x.m_Profit.m_Stats.m_Fee > feesReserve)
 			continue; // huge fees are unsupported
 
 		size_t nSizeNext = ssc.m_Counter.m_Value + x.m_Profit.m_Stats.m_Size;
-		if (!bc.m_Fees && feesNext)
-			nSizeNext += m_Proc.m_nReserveBlockSizeForFees;
-
 		if (nSizeNext > nSizeMax)
 		{
 			if (bc.m_Block.m_vInputs.empty() &&
@@ -7488,7 +7461,9 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 			{
 				TxVectors::Writer(bc.m_Block, bc.m_Block).Dump(tx.get_Reader());
 
-				bc.m_Fees = feesNext;
+				feesReserve -= x.m_Profit.m_Stats.m_Fee;
+				bc.m_Fees += x.m_Profit.m_Stats.m_Fee;
+
 				ssc.m_Counter.m_Value = nSizeNext;
 				offset += ECC::Scalar::Native(tx.m_Offset);
 				++nTxNum;
@@ -7509,22 +7484,24 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 		}
 	}
 
-	BEAM_LOG_INFO() << "GenerateNewBlock: size of block = " << ssc.m_Counter.m_Value << "; amount of tx = " << nTxNum;
-
 	if (BlockContext::Mode::Assemble != bc.m_Mode)
 	{
-		if (bc.m_Fees)
+		if (Rules::Consensus::Pbft != r.m_Consensus)
 		{
-			// make size estimation more precise
 			size_t n0 = ssc.m_Counter.m_Value;
-			ssc.m_Counter.m_Value -= m_Proc.m_nReserveBlockSizeForFees;
+			ssc.m_Counter.m_Value -= rbs.m_Size; // was pre-added, now remove it
 
-			if (Rules::Consensus::Pbft != r.m_Consensus)
+			Asset::Proof::Params::Override po(m_Proc.get_AidMax());
+			Output::Ptr ppOutp[2];
+			TxKernel::Ptr pKrn;
+			bb.AddCoinbaseAndKrn(ppOutp[0], pKrn);
+			bb.AdFees(bc.m_Fees, ppOutp[1]);
+
+			for (uint32_t i = 0; i < _countof(ppOutp); i++)
 			{
-				{
-					Asset::Proof::Params::Override po(m_Proc.get_AidMax());
-					bb.AddFees(bc.m_Fees, pOutp);
-				}
+				auto& pOutp = ppOutp[i];
+				if (!pOutp)
+					continue;
 
 				if (!HandleBlockElement(*pOutp))
 					return 0;
@@ -7533,14 +7510,25 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 				bc.m_Block.m_vOutputs.push_back(std::move(pOutp));
 			}
 
+			if (pKrn)
+			{
+				if (!HandleBlockElement(*pKrn))
+					return 0;
+
+				ssc & pKrn;
+				bc.m_Block.m_vKernels.push_back(std::move(pKrn));
+			}
+
 			assert(ssc.m_Counter.m_Value <= n0);
 			(n0); // suppress 'unused' warning in release build
-
 		}
+
 
 		bb.m_Offset = -bb.m_Offset;
 		offset += bb.m_Offset;
 	}
+
+	BEAM_LOG_INFO() << "GenerateNewBlock: size of block = " << ssc.m_Counter.m_Value << "; num txs = " << nTxNum;
 
 	bc.m_Block.m_Offset = offset;
 

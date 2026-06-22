@@ -135,7 +135,9 @@ class NodeProcessor
 
 	Mapped m_Mapped;
 
-	size_t m_nReserveBlockSizeForFees = 0;
+	struct ReserveBlockSize {
+		size_t m_Size = 0;
+	} m_ReserveBlockSize;
 
 	struct InputAux {
 		TxoID m_ID = 0;
