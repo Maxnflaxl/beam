@@ -1146,6 +1146,7 @@ namespace beam
 #define THE_MACRO(id, name) name = id,
 				BeamKernelsAll(THE_MACRO)
 #undef THE_MACRO
+				count
 			};
 		};
 
