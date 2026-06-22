@@ -3603,8 +3603,7 @@ namespace beam
 			void OnMsg(proto::GetBlockFinalization&& msg) override
 			{
 				Block::Builder bb(0, *m_Wallet.m_pKdf, *m_Wallet.m_pKdf, msg.m_Height);
-				bb.AddCoinbaseAndKrn();
-				bb.AddFees(msg.m_Fees);
+				bb.AddCoinbaseAndKrn(msg.m_Fees);
 
 				proto::BlockFinalization msgOut;
 				msgOut.m_Value.reset(new Transaction);

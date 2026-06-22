@@ -326,8 +326,8 @@ void FlyClient::NetworkStd::Connection::OnMsg(GetBlockFinalization&& msg)
         pKdf = MasterKey::get_Child(*pKdf, iIdx);
 
     Block::Builder bb(iIdx, *pKdf, *pOwner, msg.m_Height);
-    bb.AddCoinbaseAndKrn();
-    bb.AddFees(msg.m_Fees); // TODO: aidMax
+    // TODO: aidMax
+    bb.AddCoinbaseAndKrn(msg.m_Fees);
 
     proto::BlockFinalization msgOut;
     msgOut.m_Value.reset(new Transaction);

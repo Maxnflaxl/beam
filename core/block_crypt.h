@@ -1979,10 +1979,8 @@ namespace beam
 
 			Builder(Key::Index, Key::IKdf& coin, Key::IPKdf& tag, Height);
 
-			void AddCoinbaseAndKrn();
-			void AddCoinbaseAndKrn(Output::Ptr&, TxKernel::Ptr&);
-			void AddFees(Amount fees);
-			void AddFees(Amount fees, Output::Ptr&);
+			void AddCoinbaseAndKrn(Amount fees);
+			void AddCoinbaseAndKrn(Amount fees, Output::Ptr&, Output::Ptr&, TxKernel::Ptr&);
 		};
 	};
 

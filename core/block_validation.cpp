@@ -263,6 +263,10 @@ namespace beam
 		if (bHandleCoinbase)
 		{
 			auto valExp = AmountBig::Number(subsidy);
+			assert(Rules::Consensus::Pbft != rules.m_Consensus);
+			if (iFork >= 6)
+				valExp += m_Stats.m_Fee;
+
 			if (valExp != valCoinbase)
 				Exc::Fail("Coinbase value mismatch");
 		}

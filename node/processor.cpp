@@ -7329,6 +7329,8 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 
 	const auto& r = Rules::get();
 	auto& rbs = m_Proc.m_ReserveBlockSize; // alias
+	if (rbs.m_Size && (Rules::Consensus::Pbft != r.m_Consensus) && (r.IsPastFork_<6>(m_Height) != r.IsPastFork_<6>(rbs.m_Height)))
+		rbs.m_Size = 0; // no more relevant
 
 	if (!rbs.m_Size)
 	{
@@ -7336,7 +7338,6 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 
 		if (Rules::Consensus::Pbft != r.m_Consensus)
 		{
-			// coinbase UTXO
 			Output outp;
 			outp.m_pPublic.reset(new ECC::RangeProof::Public);
 			ZeroObject(*outp.m_pPublic);
@@ -7344,15 +7345,18 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 
 			ssc2 & outp;
 
-			// fees UTXO
-			outp.m_pPublic.reset();
-			outp.m_pConfidential.reset(new ECC::RangeProof::Confidential);
-			ZeroObject(*outp.m_pConfidential);
-			outp.m_pAsset = std::make_unique<Asset::Proof>();
-			outp.m_pAsset->InitArrays(r.CA.m_ProofCfg);
-			outp.m_pAsset->m_Begin = static_cast<Asset::ID>(-1);
+			if (!r.IsPastFork_<6>(m_Height))
+			{
+				// explicit fee UTXO
+				outp.m_pPublic.reset();
+				outp.m_pConfidential.reset(new ECC::RangeProof::Confidential);
+				ZeroObject(*outp.m_pConfidential);
+				outp.m_pAsset = std::make_unique<Asset::Proof>();
+				outp.m_pAsset->InitArrays(r.CA.m_ProofCfg);
+				outp.m_pAsset->m_Begin = static_cast<Asset::ID>(-1);
 
-			ssc2 & outp;
+				ssc2 & outp;
+			}
 
 			TxKernelStd krn = {};
 			krn.m_Height.m_Min = MaxHeight; // pessimistic
@@ -7372,6 +7376,7 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 		}
 
 		rbs.m_Size = ssc2.m_Counter.m_Value;
+		rbs.m_Height = m_Height;
 	}
 
 	ssc.m_Counter.m_Value += rbs.m_Size; // pre-add it
@@ -7385,6 +7390,9 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 	}
 
 	Amount feesReserve = static_cast<Amount>(-1);
+	if ((Rules::Consensus::Pbft != r.m_Consensus) && r.IsPastFork_<6>(m_Height))
+		feesReserve -= r.get_Emission(m_Height);
+
 	Block::Builder bb(bc.m_SubIdx, bc.m_Coin, bc.m_Tag, m_Height);
 	ECC::Scalar::Native offset = bc.m_Block.m_Offset;
 	size_t nTxNum = 0;
@@ -7486,16 +7494,15 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 
 	if (BlockContext::Mode::Assemble != bc.m_Mode)
 	{
+		size_t n0 = ssc.m_Counter.m_Value;
+		ssc.m_Counter.m_Value -= rbs.m_Size; // was pre-added, now remove it
+
 		if (Rules::Consensus::Pbft != r.m_Consensus)
 		{
-			size_t n0 = ssc.m_Counter.m_Value;
-			ssc.m_Counter.m_Value -= rbs.m_Size; // was pre-added, now remove it
-
 			Asset::Proof::Params::Override po(m_Proc.get_AidMax());
 			Output::Ptr ppOutp[2];
 			TxKernel::Ptr pKrn;
-			bb.AddCoinbaseAndKrn(ppOutp[0], pKrn);
-			bb.AdFees(bc.m_Fees, ppOutp[1]);
+			bb.AddCoinbaseAndKrn(bc.m_Fees, ppOutp[0], ppOutp[1], pKrn);
 
 			for (uint32_t i = 0; i < _countof(ppOutp); i++)
 			{

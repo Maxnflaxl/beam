@@ -137,6 +137,7 @@ class NodeProcessor
 
 	struct ReserveBlockSize {
 		size_t m_Size = 0;
+		Height m_Height = MaxHeight; // could be different for different forks
 	} m_ReserveBlockSize;
 
 	struct InputAux {
