@@ -1419,7 +1419,7 @@ struct NodeProcessor::MultiblockContext
 				:Shared(mbc)
 				,m_Number(num)
 			{
-				m_Ctx.m_Params.m_Kind = TxBase::Kind::Block;;
+				m_Ctx.m_Params.m_Kind = TxBase::Kind::Block;
 			}
 
 			virtual ~SharedBlock() {} // auto
@@ -7448,9 +7448,7 @@ size_t NodeProcessor::BlockInterpretCtx::GenerateNewBlockInternal(BlockContext& 
 		size_t nSizeNext = ssc.m_Counter.m_Value + x.m_Profit.m_Stats.m_Size;
 		if (nSizeNext > nSizeMax)
 		{
-			if (bc.m_Block.m_vInputs.empty() &&
-				(bc.m_Block.m_vOutputs.size() == 1) &&
-				(bc.m_Block.m_vKernels.size() == 1))
+			if (bc.m_Block.IsEmpty())
 			{
 				// won't fit in empty block
 				BEAM_LOG_INFO() << "Tx is too big.";

@@ -4480,7 +4480,7 @@ void TestAll()
 	ECC::PseudoRandomGenerator prg;
 	ECC::PseudoRandomGenerator::Scope scopePrg(&prg);
 
-	bool bClientProtoOnly = true;
+	bool bClientProtoOnly = false;
 
 	//auto logger = beam::Logger::create(BEAM_LOG_LEVEL_DEBUG, BEAM_LOG_LEVEL_DEBUG);
 	if (!bClientProtoOnly)
