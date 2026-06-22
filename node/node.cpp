@@ -4267,7 +4267,7 @@ void Node::Peer::OnMsg(proto::BlockFinalization&& msg)
 		// and do the overall validation
 		TxBase::Context ctx;
 		ctx.m_Height = m_This.m_Processor.m_Cursor.m_hh.m_Height + 1;
-		ctx.m_Params.m_bBlock = true; // the following also ensures the coinbase value corresponds to the subsidy
+		ctx.m_Params.m_Kind = TxBase::Kind::Block; // the following also ensures the coinbase value corresponds to the subsidy
 		std::string sErr;
 		if (!m_This.m_Processor.ValidateAndSummarize(ctx, *msg.m_Value, msg.m_Value->get_Reader(), sErr))
 			ThrowUnexpected(sErr.c_str());

@@ -1526,6 +1526,12 @@ namespace beam
 		class Context;
 		static int CmpInOut(const Input&, const Output&);
 
+		enum class Kind {
+			Tx,
+			Block,
+			SparseBlock,
+		};
+
 		struct IReader
 		{
 			typedef std::unique_ptr<IReader> Ptr;
@@ -2026,8 +2032,7 @@ namespace beam
 
 		struct Params
 		{
-			bool m_bAllowUnsignedOutputs; // allow outputs without signature (commitment only). Applicable for cut-through blocks only, outputs that are supposed to be consumed in the later block.
-			bool m_bBlock; // block or tx?
+			TxBase::Kind m_Kind;
 
 			// for multi-tasking, parallel verification
 			uint32_t m_nVerifiers;

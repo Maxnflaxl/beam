@@ -1419,7 +1419,7 @@ struct NodeProcessor::MultiblockContext
 				:Shared(mbc)
 				,m_Number(num)
 			{
-				m_Ctx.m_Params.m_bBlock = true;
+				m_Ctx.m_Params.m_Kind = TxBase::Kind::Block;;
 			}
 
 			virtual ~SharedBlock() {} // auto
@@ -1575,7 +1575,7 @@ struct NodeProcessor::MultiblockContext
 
 		bool bFull = (pShared->m_Number.v > m_This.m_SyncData.m_Target.m_Number.v);
 
-		pShared->m_Ctx.m_Params.m_bAllowUnsignedOutputs = !bFull;
+		pShared->m_Ctx.m_Params.m_Kind = bFull ? TxBase::Kind::Block : TxBase::Kind::SparseBlock;
 		pShared->m_Ctx.m_Params.m_pAbort = &m_bFail;
 		pShared->m_Ctx.m_Params.m_nVerifiers = ex.get_Threads();
 

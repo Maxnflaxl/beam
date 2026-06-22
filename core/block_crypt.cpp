@@ -1909,7 +1909,7 @@ namespace beam
 
 	void Transaction::TestValid(Context& ctx) const
 	{
-		assert(!ctx.m_Params.m_bBlock);
+		assert(Kind::Tx == ctx.m_Params.m_Kind);
 		ctx.ValidateAndSummarizeStrict(*this, get_Reader());
 		ctx.TestSigma();
 	}
