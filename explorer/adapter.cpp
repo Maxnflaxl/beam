@@ -1352,6 +1352,8 @@ private:
 #define THE_MACRO(id, name) case id: OnKrnEx(Cast::Up<TxKernel##name>(krn)); break;
                         BeamKernelsAll(THE_MACRO)
 #undef THE_MACRO
+                    default:
+                        break; // suppress warning
                     }
                 }
 

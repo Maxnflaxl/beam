@@ -579,9 +579,7 @@ namespace beam::wallet
         MyWrapper wr;
         wr.m_pSkip = m_pKrn;
         wr.m_Count = v.size();
-        if (wr.m_Count)
-            wr.m_p0 = &v.front();
-
+        wr.m_p0 = wr.m_Count ? &v.front() : nullptr;
 
         SetParameter(TxParameterID::ExtraKernels, wr);
 
