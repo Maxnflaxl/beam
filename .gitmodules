@@ -1,0 +1,19 @@
+[submodule "3rdparty/curl"]
+	path = 3rdparty/curl
+	url = https://github.com/curl/curl.git
+[submodule "3rdparty/protobuf"]
+	path = 3rdparty/protobuf
+	url = https://github.com/protocolbuffers/protobuf.git
+[submodule "3rdparty/trezor-cpp-client"]
+	path = 3rdparty/trezor-cpp-client
+	url = https://github.com/BeamMW/trezor-cpp-client.git
+[submodule "3rdparty/asio-ipfs"]
+	path = 3rdparty/asio-ipfs
+	url = https://github.com/Maxnflaxl/asio-ipfs.git
+	branch = connected-peers
+[submodule "3rdparty/re2"]
+	path = 3rdparty/re2
+	url = https://github.com/BeamMW/re2
+[submodule "3rdparty/secp256k1"]
+	path = 3rdparty/secp256k1
+	url = https://github.com/BeamMW/secp256k1.git
