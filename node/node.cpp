@@ -4365,22 +4365,49 @@ void Node::Peer::OnMsg(proto::BlockFinalization&& msg)
 	{
 		ECC::Mode::Scope scope(ECC::Mode::Fast);
 
-		// verify that all the outputs correspond to our viewer's Kdf (in case our comm was hacked this'd prevent mining for someone else)
 		// and do the overall validation
 		TxBase::Context ctx;
 		ctx.m_Height = m_This.m_Processor.m_Cursor.m_hh.m_Height + 1;
-		ctx.m_Params.m_bBlock = true; // the following also ensures the coinbase value corresponds to the subsidy
+		ctx.m_Params.m_Kind = TxBase::Kind::Block; // the following also ensures the coinbase value corresponds to the subsidy
+
+		bool bAddAuxKrn = !!x.m_Fees;
+		if (bAddAuxKrn)
+		{
+			struct TxKernelDummy
+				:public TxKernel
+			{
+				~TxKernelDummy() override {}
+				Subtype::Enum get_Subtype() const override { return TxKernel::Subtype::count;  }
+				void CalculateID() const override {}
+				bool HasNonStd() const override { return true; }
+				void TestValid(Height hScheme, ECC::Point::Native& exc, const TxKernel* pParentW) const override
+				{
+					ECC::Point::Native pt;
+					AmountBig::AddTo(pt, AmountBig::Number(m_Fee));
+					pt = -pt;
+					exc += pt;
+				}
+				void Clone(Ptr&) const override {}
+			};
+
+			auto pKrn = std::make_unique<TxKernelDummy>();
+			pKrn->m_Fee = x.m_Fees;
+			pKrn->m_Height = ctx.m_Height;
+			tx.m_vKernels.push_back(std::move(pKrn));
+		}
+
 		std::string sErr;
 		if (!m_This.m_Processor.ValidateAndSummarize(ctx, *msg.m_Value, msg.m_Value->get_Reader(), sErr))
 			ThrowUnexpected(sErr.c_str());
-
-		ctx.m_Sigma = -ctx.m_Sigma;
-		AmountBig::AddTo(ctx.m_Sigma, AmountBig::Number(x.m_Fees));
 		ctx.TestSigma();
 
 		if (!tx.m_vInputs.empty())
 			ThrowUnexpected();
 
+		if (bAddAuxKrn)
+			tx.m_vKernels.pop_back();
+
+		// verify that all the outputs correspond to our viewer's Kdf (in case our comm was hacked this'd prevent mining for someone else)
 		for (size_t i = 0; i < tx.m_vOutputs.size(); i++)
 		{
 			CoinID cid;

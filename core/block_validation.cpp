@@ -29,6 +29,7 @@ namespace beam
 	TxBase::Context::Params::Params()
 	{
 		ZeroObject(*this);
+		static_assert(static_cast<int>(TxBase::Kind::Tx) == 0);
 		m_nVerifiers = 1;
 	}
 
@@ -152,7 +153,8 @@ namespace beam
 
 		m_Sigma = -m_Sigma;
 
-		bool bHandleCoinbase = !m_Params.m_bAllowUnsignedOutputs && ShouldVerify(iV);
+		bool bHandleTotals = ShouldVerify(iV);
+		bool bHandleCoinbase = bHandleTotals && (TxBase::Kind::SparseBlock != m_Params.m_Kind);
 		AmountBig::Number valCoinbase = Zero;
 
 		// Outputs
@@ -179,7 +181,7 @@ namespace beam
 				if (pPrev && (*pPrev > *r.m_pUtxoOut))
 				{
 					// in case of unsigned outputs sometimes order of outputs may look incorrect (duplicated commitment, part of signatures removed)
-					if (!m_Params.m_bAllowUnsignedOutputs || (pPrev->m_Commitment != r.m_pUtxoOut->m_Commitment))
+					if ((TxBase::Kind::SparseBlock != m_Params.m_Kind) || (pPrev->m_Commitment != r.m_pUtxoOut->m_Commitment))
 						Fail_Order();
 				}
 
@@ -193,7 +195,7 @@ namespace beam
 				else
 				{
 					// unsigned output
-					if (!m_Params.m_bAllowUnsignedOutputs)
+					if (TxBase::Kind::SparseBlock != m_Params.m_Kind)
 						Exc::Fail("Missing rangeproof");
 
 					pt.ImportStrict(r.m_pUtxoOut->m_Commitment);
@@ -205,7 +207,7 @@ namespace beam
 
 			if (bHandleCoinbase && r.m_pUtxoOut->m_Coinbase)
 			{
-				if (!m_Params.m_bBlock)
+				if (TxBase::Kind::Tx == m_Params.m_Kind)
 					Exc::Fail("Coinbase in tx");
 
 				if (Rules::Consensus::Pbft == rules.m_Consensus)
@@ -216,9 +218,6 @@ namespace beam
 
 			}
 		}
-
-		AmountBig::Number valFees = Zero;
-		bool bFeesToSigma = (!m_Params.m_bBlock || (Rules::Consensus::Pbft == rules.m_Consensus)) && ShouldVerify(iV);
 
 		for (const TxKernel* pPrev = NULL; r.m_pKernel; pPrev = r.m_pKernel, r.NextKernel())
 		{
@@ -234,12 +233,10 @@ namespace beam
 				r.m_pKernel->TestValid(m_Height.m_Min, m_Sigma);
 
 				HandleElementHeightStrict(r.m_pKernel->get_EffectiveHeightRange());
-
-				r.m_pKernel->AddStats(m_Stats);
 			}
 
-			if (bFeesToSigma)
-				r.m_pKernel->AddFees(valFees);
+			if (bHandleTotals)
+				r.m_pKernel->AddStats(m_Stats);
 		}
 
 		assert(!m_Height.IsEmpty());
@@ -247,33 +244,37 @@ namespace beam
 		if (ShouldVerify(iV) && !(txb.m_Offset.m_Value == Zero))
 			m_Sigma += ECC::Context::get().G * txb.m_Offset;
 
-		if (bFeesToSigma)
-			AmountBig::AddTo(m_Sigma, valFees);
+		if (!bHandleTotals)
+			return;
 
-		if (m_Params.m_bBlock)
+		if ((TxBase::Kind::Tx == m_Params.m_Kind) || (Rules::Consensus::Pbft == rules.m_Consensus))
+			AmountBig::AddTo(m_Sigma, m_Stats.m_Fee); // fees vanish from block/tx, not compensated directly
+
+		if (TxBase::Kind::Tx == m_Params.m_Kind)
+			return;
+
+		assert(m_Height.m_Min == m_Height.m_Max);
+
+		if (Rules::Consensus::Pbft == rules.m_Consensus)
+			return;
+
+		Amount subsidy = rules.get_Emission(m_Height.m_Min);
+
+		if (bHandleCoinbase)
 		{
-			assert(m_Height.m_Min == m_Height.m_Max);
+			auto valExp = AmountBig::Number(subsidy);
+			assert(Rules::Consensus::Pbft != rules.m_Consensus);
+			if (iFork >= 6)
+				valExp += m_Stats.m_Fee;
 
-			bool bAddSubsidy =
-				(Rules::Consensus::Pbft != rules.m_Consensus) &&
-				ShouldVerify(iV);
-
-			Amount subsidy = 0;
-
-			if (bAddSubsidy || bHandleCoinbase)
-				subsidy = rules.get_Emission(m_Height.m_Min);
-
-			if (bHandleCoinbase && (AmountBig::Number(subsidy) != valCoinbase))
+			if (valExp != valCoinbase)
 				Exc::Fail("Coinbase value mismatch");
-
-			if (bAddSubsidy)
-			{
-				m_Sigma = -m_Sigma;
-				AmountBig::AddTo(m_Sigma, subsidy);
-				m_Sigma = -m_Sigma;
-			}
-
 		}
+
+		m_Sigma = -m_Sigma;
+		AmountBig::AddTo(m_Sigma, subsidy);
+		m_Sigma = -m_Sigma;
+
 	}
 
 	void TxBase::Context::TestSigma() const

@@ -3603,8 +3603,7 @@ namespace beam
 			void OnMsg(proto::GetBlockFinalization&& msg) override
 			{
 				Block::Builder bb(0, *m_Wallet.m_pKdf, *m_Wallet.m_pKdf, msg.m_Height);
-				bb.AddCoinbaseAndKrn();
-				bb.AddFees(msg.m_Fees);
+				bb.AddCoinbaseAndKrn(msg.m_Fees);
 
 				proto::BlockFinalization msgOut;
 				msgOut.m_Value.reset(new Transaction);
@@ -4482,8 +4481,6 @@ void TestAll()
 	ECC::PseudoRandomGenerator::Scope scopePrg(&prg);
 
 	bool bClientProtoOnly = false;
-	bool bTestPbft = true;
-	bool bTestBridge = false;
 
 	//auto logger = beam::Logger::create(BEAM_LOG_LEVEL_DEBUG, BEAM_LOG_LEVEL_DEBUG);
 	if (!bClientProtoOnly)
@@ -4572,7 +4569,10 @@ void TestAll()
 	printf("Node <---> Client test (with proofs)...\n");
 	fflush(stdout);
 
-	beam::TestNodeClientProto(r, bTestPbft, bTestBridge);
+	beam::TestNodeClientProto(r, false, false);
+	beam::DeleteFile(beam::g_sz);
+	beam::DeleteFile(beam::g_sz2);
+	beam::TestNodeClientProto(r, true, true);
 
 	{
 		auto logger = beam::Logger::create(BEAM_LOG_LEVEL_DEBUG, BEAM_LOG_LEVEL_DEBUG);
